@@ -1,0 +1,37 @@
+name: Sorare Market Alert
+
+on:
+  # Permette di avviare il workflow manualmente per testarlo
+  workflow_dispatch:
+
+  # Esegue il workflow automaticamente ogni 15 minuti
+  schedule:
+    - cron: '*/15 * * * *'
+
+jobs:
+  check-price:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Installa dipendenze
+        run: pip install requests
+
+      - name: Esegui lo script di controllo mercato
+        env:
+          # --- CONFIGURA QUI IL TUO ALERT ---
+          PLAYER_SLUG: "erling-haaland"  # <-- CAMBIA QUI LO SLUG DEL GIOCATORE
+          TARGET_PRICE_EUR: "100.0"      # <-- CAMBIA QUI IL PREZZO OBIETTIVO
+          RARITY: "limited"              # <-- CAMBIA QUI LA RARITÀ (limited, rare, super_rare)
+
+          # --- SEGRETI DI GITHUB ---
+          # Il webhook viene letto in modo sicuro dai segreti
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          SORARE_API_KEY: ${{ secrets.SORARE_API_KEY }}
+        run: python market_alert.py
