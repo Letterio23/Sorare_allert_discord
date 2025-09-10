@@ -27,10 +27,8 @@ jobs:
           # Formato JSON: facile da aggiungere, modificare o rimuovere giocatori.
           PLAYER_TARGETS_JSON: |
             [
-              { "slug": "erling-haaland", "price": 100, "rarity": "limited" },
-              { "slug": "lionel-messi", "price": 55, "rarity": "rare" },
-              { "slug": "kepa-arrizabalaga", "price": 1.5, "rarity": "limited" },
-              { "slug": "cristiano-ronaldo", "price": 25, "rarity": "limited" }
+              { "slug": "ederson-jose-dos-santos-lourenco-da-silva", "price": 2.1, "rarity": "limited" },
+              { "slug": "jarrod-bowen", "price": 2.68, "rarity": "limited" }        
             ]
 
           # --- SEGRETI DI GITHUB (rimangono uguali) ---
