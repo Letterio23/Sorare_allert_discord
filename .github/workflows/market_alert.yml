@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
   # Esegue il workflow automaticamente ogni 5 minuti
-  schedule:
+ RIMUOVI QUESTO PER FARLO PARTIRE--->  # schedule:
  RIMUOVI QUESTO PER FARLO PARTIRE--->  # - cron: '*/5 * * * *'
 
 jobs:
