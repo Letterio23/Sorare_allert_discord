@@ -1,0 +1,52 @@
+# Nome del workflow, visibile nella tab "Actions" di GitHub
+name: Estrai Galleria Carte Sorare
+
+# Definisce quando eseguire il workflow
+on:
+  # Permette di avviare il workflow manualmente dalla UI di GitHub
+  workflow_dispatch:
+
+  # Esegue il workflow automaticamente ogni giorno alle 8:00 UTC
+  schedule:
+    - cron: '0 8 * * *'
+
+# Definisce i "lavori" da eseguire
+jobs:
+  extract-gallery:
+    # Specifica il sistema operativo su cui girare (consigliato)
+    runs-on: ubuntu-latest
+
+    # Elenco dei passaggi da eseguire
+    steps:
+      # 1. Scarica il codice del tuo repository
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      # 2. Imposta l'ambiente Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # 3. Installa le librerie Python necessarie
+      - name: Installa dipendenze
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      # 4. Esegui lo script Python per estrarre i dati
+      - name: Esegui lo script di estrazione
+        env:
+          # Passa i segreti come variabili d'ambiente allo script
+          SORARE_API_KEY: ${{ secrets.SORARE_API_KEY }}
+          USER_SLUG: ${{ secrets.USER_SLUG }}
+        run: python extract_gallery.py
+
+      # 5. Carica il file JSON generato come "artefatto"
+      - name: Carica l'artefatto della galleria
+        uses: actions/upload-artifact@v4
+        with:
+          # Nome dell'artefatto che vedrai nella pagina del workflow
+          name: sorare-gallery-data
+          # Percorso del file da caricare
+          path: gallery.json
