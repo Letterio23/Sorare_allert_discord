@@ -27,8 +27,9 @@ jobs:
           # Formato JSON: facile da aggiungere, modificare o rimuovere giocatori.
           PLAYER_TARGETS_JSON: |
             [
-              { "slug": "ederson-jose-dos-santos-lourenco-da-silva", "price": 2.1, "rarity": "limited" },
-              { "slug": "jarrod-bowen", "price": 2.68, "rarity": "limited" }        
+              { "slug": "ederson-jose-dos-santos-lourenco-da-silva", "price": 1.4, "rarity": "limited" },
+              { "slug": "jarrod-bowen", "price": 2.68, "rarity": "limited" }  
+              { "slug": "martin-zlomislic", "price": 2.4, "rarity": "limited" }
             ]
 
           # --- SEGRETI DI GITHUB (rimangono uguali) ---
