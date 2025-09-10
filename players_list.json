@@ -16,12 +16,12 @@
     "price": 3,
     "rarity": "rare",
     "season": "in_season"
-  }
+  },
   {
     "slug": "christian-dannemann-eriksen",
     "price": 3.0,
     "rarity": "limited",
     "season": "classic"
-  },
+  }
   
 ]
