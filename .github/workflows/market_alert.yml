@@ -36,3 +36,13 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SORARE_API_KEY: ${{ secrets.SORARE_API_KEY }}
         run: python market_alert.py
+                - name: Commit and push notification state
+              run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          # Aggiunge il file di stato solo se è stato modificato
+          git add sent_notifications.json
+          # Crea un commit solo se ci sono cambiamenti, altrimenti esce senza errori
+          git commit -m "Aggiorna lo stato delle notifiche inviate" || exit 0
+          # Spinge le modifiche al repository
+          git push
