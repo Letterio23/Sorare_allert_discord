@@ -27,7 +27,7 @@ jobs:
         env:
           # --- CONFIGURA QUI IL TUO ALERT ---
           PLAYER_SLUG: "ederson-jose-dos-santos-lourenco-da-silva"  # <-- CAMBIA QUI LO SLUG DEL GIOCATORE
-          TARGET_PRICE_EUR: "1.5"      # <-- CAMBIA QUI IL PREZZO OBIETTIVO
+          TARGET_PRICE_EUR: "1.4"      # <-- CAMBIA QUI IL PREZZO OBIETTIVO
           RARITY: "limited"              # <-- CAMBIA QUI LA RARITÀ (limited, rare, super_rare)
 
           # --- SEGRETI DI GITHUB ---
