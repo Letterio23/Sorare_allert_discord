@@ -6,7 +6,7 @@ on:
 
   # Esegue il workflow automaticamente ogni 5 minuti
   schedule:
-    - cron: '*/5 * * * *'
+ RIMUOVI QUESTO PER FARLO PARTIRE--->  # - cron: '*/5 * * * *'
 
 jobs:
   check-prices:
