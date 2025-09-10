@@ -3,21 +3,19 @@ import requests
 import json
 import time
 
-# --- CONFIGURAZIONE ---
-# Ora leggiamo la lista JSON e i segreti
-PLAYER_TARGETS_JSON = os.environ.get("PLAYER_TARGETS_JSON")
+# --- CONFIGURAZIONE DAI SEGRETI (invariata) ---
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 SORARE_API_KEY = os.environ.get("SORARE_API_KEY")
-
 API_URL = "https://api.sorare.com/graphql"
 
-# --- QUERY GRAPHQL (rimane invariata) ---
+# --- QUERY GRAPHQL AGGIORNATA ---
+# Ora accetta una variabile booleana $inSeason
 LOWEST_PRICE_QUERY = """
-    query GetLowestPrice($playerSlug: String!, $rarity: Rarity!) {
+    query GetLowestPrice($playerSlug: String!, $rarity: Rarity!, $inSeason: Boolean) {
       football {
         player(slug: $playerSlug) {
           displayName
-          lowestPriceAnyCard(rarity: $rarity) {
+          lowestPriceAnyCard(rarity: $rarity, inSeason: $inSeason) {
             liveSingleSaleOffer {
               receiverSide {
                 amounts { eurCents, wei }
@@ -50,15 +48,22 @@ def send_discord_notification(message):
         print(f"ERRORE invio notifica Discord: {e}")
 
 def check_single_player_price(target, eth_rate):
-    """Controlla il prezzo di un singolo giocatore."""
+    """Controlla il prezzo di un singolo giocatore, ora con il filtro sulla stagione."""
     player_slug = target['slug']
     target_price = float(target['price'])
     rarity = target['rarity']
+    # Legge la preferenza sulla stagione. Se non c'è, usa 'classic' come default.
+    season_preference = target.get('season', 'classic')
     
-    print(f"\n--- Controllando {player_slug} ({rarity}) con obiettivo <= {target_price}€ ---")
+    # L'API vuole un Booleano (True/False), non una stringa.
+    is_in_season = (season_preference == "in_season")
+    
+    season_text = "In Season" if is_in_season else "Classic"
+    print(f"\n--- Controllando {player_slug} ({rarity}, {season_text}) con obiettivo <= {target_price}€ ---")
     
     headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
-    variables = {"playerSlug": player_slug, "rarity": rarity}
+    # Aggiunge la nuova variabile alla chiamata API
+    variables = {"playerSlug": player_slug, "rarity": rarity, "inSeason": is_in_season}
     payload = {"query": LOWEST_PRICE_QUERY, "variables": variables}
 
     try:
@@ -72,7 +77,7 @@ def check_single_player_price(target, eth_rate):
 
         card_data = data.get("data", {}).get("football", {}).get("player")
         if not card_data or not card_data.get("lowestPriceAnyCard"):
-            print(f"Nessuna carta '{rarity}' per {player_slug} trovata sul mercato.")
+            print(f"Nessuna carta '{rarity}' ({season_text}) per {player_slug} trovata sul mercato.")
             return
 
         player_name = card_data.get("displayName", player_slug)
@@ -90,9 +95,11 @@ def check_single_player_price(target, eth_rate):
             if current_price <= target_price:
                 print(f"!!! CONDIZIONE SODDISFATTA !!! Invio notifica...")
                 market_url = f"https://sorare.com/football/players/{player_slug}/cards?rarity={rarity}"
+                # La notifica ora specifica il tipo di stagione!
                 message = (
                     f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
                     f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
+                    f"**Tipo Carta: {season_text}**\n"
                     f"📉 **Prezzo Trovato: {current_price:.2f}€**\n"
                     f"🎯 **Prezzo Obiettivo: {target_price:.2f}€**\n\n"
                     f"➡️ Vai al mercato: {market_url}"
@@ -106,28 +113,28 @@ def check_single_player_price(target, eth_rate):
     except Exception as e:
         print(f"Errore imprevisto durante il controllo di {player_slug}: {e}")
 
-
 def main():
     """Funzione principale che orchestra il processo."""
-    if not all([PLAYER_TARGETS_JSON, SORARE_API_KEY, DISCORD_WEBHOOK_URL]):
-        print("ERRORE: Mancano una o più variabili d'ambiente o segreti.")
-        return
-
-    try:
-        targets = json.loads(PLAYER_TARGETS_JSON)
-        print(f"Trovati {len(targets)} giocatori da monitorare.")
-    except json.JSONDecodeError:
-        print("ERRORE: Formato JSON non valido in PLAYER_TARGETS_JSON.")
+    if not all([SORARE_API_KEY, DISCORD_WEBHOOK_URL]):
+        print("ERRORE: Mancano i segreti SORARE_API_KEY o DISCORD_WEBHOOK_URL.")
         return
     
-    # Recupera il tasso di cambio una sola volta all'inizio
+    try:
+        with open("players_list.json", "r") as f:
+            targets = json.load(f)
+        print(f"Trovati {len(targets)} giocatori da monitorare dal file players_list.json.")
+    except FileNotFoundError:
+        print("ERRORE: Il file 'players_list.json' non è stato trovato.")
+        return
+    except json.JSONDecodeError:
+        print("ERRORE: Formato JSON non valido in players_list.json.")
+        return
+    
     eth_to_eur_rate = get_eth_to_eur_rate()
     print(f"Tasso di cambio attuale: 1 ETH = {eth_to_eur_rate:.2f}€")
 
-    # Cicla su ogni giocatore nella lista
     for target in targets:
         check_single_player_price(target, eth_to_eur_rate)
-        # Aggiungiamo una piccola pausa per essere gentili con l'API di Sorare
         time.sleep(1) 
     
     print("\n--- Controllo completato. ---")
