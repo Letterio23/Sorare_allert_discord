@@ -1,25 +1,20 @@
 [
   {
-    "slug": "erling-haaland",
-    "price": 100,
-    "rarity": "limited",
-    "season": "in_season"
-  },
-  {
-    "slug": "lionel-messi",
-    "price": 55,
+    "slug": "ederson-jose-dos-santos-lourenco-da-silva",
+    "price": 3,
     "rarity": "rare",
     "season": "classic"
   },
   {
-    "slug": "kepa-arrizabalaga",
-    "price": 1.5,
+    "slug": "ederson-jose-dos-santos-lourenco-da-silva",
+    "price": 1.4,
     "rarity": "limited",
     "season": "classic"
   },
   {
-    "slug": "cristiano-ronaldo",
-    "price": 25,
-    "rarity": "limited"
+    "slug": "ederson-jose-dos-santos-lourenco-da-silva",
+    "price": 3,
+    "rarity": "rare",
+    "season": "in_season"
   }
 ]
