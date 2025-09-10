@@ -1,48 +1,54 @@
 name: Sorare Market Alert (Multi-Player)
 
 on:
+  # Permette di avviare il workflow manualmente per testarlo
   workflow_dispatch:
+
+  # Esegue il workflow automaticamente ogni 5 minuti
   schedule:
-    # Esegue il workflow ogni 5 minuti (frequenza massima)
     - cron: '*/5 * * * *'
 
 jobs:
   check-prices:
     runs-on: ubuntu-latest
     steps:
+      # 1. Scarica il codice del tuo repository per poter eseguire lo script
       - name: Checkout del codice
         uses: actions/checkout@v4
 
+      # 2. Imposta l'ambiente Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
+      # 3. Installa le librerie Python necessarie
       - name: Installa dipendenze
         run: pip install requests
 
+      # 4. Esegue lo script che controlla i prezzi e invia le notifiche
       - name: Esegui lo script di controllo mercato
         env:
-          # --- CONFIGURA QUI LA TUA LISTA DI GIOCATORI ---
-          # Formato JSON: facile da aggiungere, modificare o rimuovere giocatori.
-          PLAYER_TARGETS_JSON: |
-            [
-              { "slug": "ederson-jose-dos-santos-lourenco-da-silva", "price": 1.4, "rarity": "limited" },
-              { "slug": "jarrod-bowen", "price": 2.68, "rarity": "limited" }  
-              { "slug": "martin-zlomislic", "price": 2.4, "rarity": "limited" }
-            ]
-
-          # --- SEGRETI DI GITHUB (rimangono uguali) ---
+          # Segreti di GitHub (non è più necessario definire la lista qui)
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SORARE_API_KEY: ${{ secrets.SORARE_API_KEY }}
         run: python market_alert.py
-                - name: Commit and push notification state
-              run: |
+
+      # 5. Salva lo stato delle notifiche se è cambiato
+      # Questo passaggio è fondamentale per evitare notifiche multiple
+      - name: Commit and push notification state
+        run: |
+          # Configura l'identità del bot per poter fare commit
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # Aggiunge il file di stato solo se è stato modificato
+          
+          # Aggiunge il file di stato all'area di staging di Git
           git add sent_notifications.json
-          # Crea un commit solo se ci sono cambiamenti, altrimenti esce senza errori
+          
+          # Esegue il commit solo se ci sono stati cambiamenti nel file.
+          # Se non ci sono cambiamenti, il comando fallisce e "|| exit 0" 
+          # previene che il workflow si blocchi con un errore.
           git commit -m "Aggiorna lo stato delle notifiche inviate" || exit 0
-          # Spinge le modifiche al repository
+          
+          # Spinge (push) il nuovo commit al repository
           git push
