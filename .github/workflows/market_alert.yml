@@ -6,7 +6,7 @@ on:
 
   # Esegue il workflow automaticamente ogni 15 minuti
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
 
 jobs:
   check-price:
