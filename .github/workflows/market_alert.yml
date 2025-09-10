@@ -26,8 +26,8 @@ jobs:
       - name: Esegui lo script di controllo mercato
         env:
           # --- CONFIGURA QUI IL TUO ALERT ---
-          PLAYER_SLUG: "erling-haaland"  # <-- CAMBIA QUI LO SLUG DEL GIOCATORE
-          TARGET_PRICE_EUR: "100.0"      # <-- CAMBIA QUI IL PREZZO OBIETTIVO
+          PLAYER_SLUG: "ederson-jose-dos-santos-lourenco-da-silva"  # <-- CAMBIA QUI LO SLUG DEL GIOCATORE
+          TARGET_PRICE_EUR: "1.5"      # <-- CAMBIA QUI IL PREZZO OBIETTIVO
           RARITY: "limited"              # <-- CAMBIA QUI LA RARITÀ (limited, rare, super_rare)
 
           # --- SEGRETI DI GITHUB ---
