@@ -1,18 +1,17 @@
 import os
 import requests
 import json
+import time
 
-# --- CONFIGURAZIONE LETTA DAL WORKFLOW ---
-PLAYER_SLUG = os.environ.get("PLAYER_SLUG")
-TARGET_PRICE_EUR = float(os.environ.get("TARGET_PRICE_EUR", 0))
-RARITY = os.environ.get("RARITY", "limited")
+# --- CONFIGURAZIONE ---
+# Ora leggiamo la lista JSON e i segreti
+PLAYER_TARGETS_JSON = os.environ.get("PLAYER_TARGETS_JSON")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-SORARE_API_KEY = os.environ.get("SORARE_API_KEY") # Chiave API per le chiamate autenticate
+SORARE_API_KEY = os.environ.get("SORARE_API_KEY")
 
 API_URL = "https://api.sorare.com/graphql"
 
-# --- QUERY GRAPHQL PER IL PREZZO PIÙ BASSO ---
-# Chiede il prezzo più basso per un giocatore e rarità specifici
+# --- QUERY GRAPHQL (rimane invariata) ---
 LOWEST_PRICE_QUERY = """
     query GetLowestPrice($playerSlug: String!, $rarity: Rarity!) {
       football {
@@ -21,11 +20,7 @@ LOWEST_PRICE_QUERY = """
           lowestPriceAnyCard(rarity: $rarity) {
             liveSingleSaleOffer {
               receiverSide {
-                amounts {
-                  eurCents
-                  wei
-                  referenceCurrency
-                }
+                amounts { eurCents, wei }
               }
             }
           }
@@ -35,40 +30,35 @@ LOWEST_PRICE_QUERY = """
 """
 
 def get_eth_to_eur_rate():
-    """Recupera il tasso di cambio ETH/EUR da un'API pubblica."""
+    """Recupera il tasso di cambio ETH/EUR."""
     try:
         response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur")
         response.raise_for_status()
         return response.json()["ethereum"]["eur"]
-    except Exception as e:
-        print(f"Attenzione: Impossibile recuperare il tasso ETH/EUR. Errore: {e}")
-        # Ritorna un valore di fallback in caso di errore
-        return 2800.0
+    except Exception:
+        return 2800.0 # Fallback
 
 def send_discord_notification(message):
-    """Invia un messaggio al webhook di Discord specificato."""
-    if not DISCORD_WEBHOOK_URL:
-        print("ERRORE: URL del Webhook di Discord non trovato.")
-        return
-        
+    """Invia un messaggio al webhook di Discord."""
+    if not DISCORD_WEBHOOK_URL: return
     payload = {"content": message}
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
         response.raise_for_status()
         print("Notifica Discord inviata con successo!")
     except requests.exceptions.RequestException as e:
-        print(f"ERRORE durante l'invio della notifica a Discord: {e}")
+        print(f"ERRORE invio notifica Discord: {e}")
 
-def check_market_price():
-    """Funzione principale che controlla il prezzo di mercato."""
-    if not all([PLAYER_SLUG, TARGET_PRICE_EUR, RARITY, SORARE_API_KEY]):
-        print("ERRORE: Mancano una o più variabili d'ambiente (PLAYER_SLUG, TARGET_PRICE_EUR, RARITY, SORARE_API_KEY).")
-        return
-
-    print(f"Controllo del mercato per {PLAYER_SLUG} ({RARITY}) con prezzo obiettivo <= {TARGET_PRICE_EUR}€")
-
+def check_single_player_price(target, eth_rate):
+    """Controlla il prezzo di un singolo giocatore."""
+    player_slug = target['slug']
+    target_price = float(target['price'])
+    rarity = target['rarity']
+    
+    print(f"\n--- Controllando {player_slug} ({rarity}) con obiettivo <= {target_price}€ ---")
+    
     headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
-    variables = {"playerSlug": PLAYER_SLUG, "rarity": RARITY}
+    variables = {"playerSlug": player_slug, "rarity": rarity}
     payload = {"query": LOWEST_PRICE_QUERY, "variables": variables}
 
     try:
@@ -77,50 +67,70 @@ def check_market_price():
         data = response.json()
 
         if "errors" in data:
-            print(f"Errore GraphQL: {data['errors']}")
+            print(f"Errore GraphQL per {player_slug}: {data['errors']}")
             return
 
         card_data = data.get("data", {}).get("football", {}).get("player")
         if not card_data or not card_data.get("lowestPriceAnyCard"):
-            print(f"Nessuna carta '{RARITY}' per {PLAYER_SLUG} trovata sul mercato.")
+            print(f"Nessuna carta '{rarity}' per {player_slug} trovata sul mercato.")
             return
 
-        player_name = card_data.get("displayName", PLAYER_SLUG)
+        player_name = card_data.get("displayName", player_slug)
         amounts = card_data["lowestPriceAnyCard"]["liveSingleSaleOffer"]["receiverSide"]["amounts"]
 
         current_price = 0
-        if amounts.get("eurCents"):
+        if amounts and amounts.get("eurCents"):
             current_price = amounts["eurCents"] / 100
-        elif amounts.get("wei"):
-            eth_to_eur = get_eth_to_eur_rate()
+        elif amounts and amounts.get("wei"):
             eth_price = float(amounts["wei"]) / 1e18
-            current_price = eth_price * eth_to_eur
-            print(f"Prezzo in ETH convertito: {current_price:.2f}€")
+            current_price = eth_price * eth_rate
 
         if current_price > 0:
-            print(f"Prezzo più basso trovato: {current_price:.2f}€")
-            if current_price <= TARGET_PRICE_EUR:
-                print(f"CONDIZIONE SODDISFATTA! Prezzo ({current_price:.2f}€) <= Obiettivo ({TARGET_PRICE_EUR}€). Invio notifica...")
-                
-                # Link diretto alla pagina del giocatore per comodità
-                market_url = f"https://sorare.com/football/players/{PLAYER_SLUG}/cards?rarity={RARITY}"
-                
+            print(f"Prezzo più basso per {player_name}: {current_price:.2f}€")
+            if current_price <= target_price:
+                print(f"!!! CONDIZIONE SODDISFATTA !!! Invio notifica...")
+                market_url = f"https://sorare.com/football/players/{player_slug}/cards?rarity={rarity}"
                 message = (
                     f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
-                    f"Trovata carta per **{player_name}** ({RARITY.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
+                    f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
                     f"📉 **Prezzo Trovato: {current_price:.2f}€**\n"
-                    f"🎯 **Prezzo Obiettivo: {TARGET_PRICE_EUR:.2f}€**\n\n"
+                    f"🎯 **Prezzo Obiettivo: {target_price:.2f}€**\n\n"
                     f"➡️ Vai al mercato: {market_url}"
                 )
                 send_discord_notification(message)
             else:
-                print("Prezzo attuale superiore all'obiettivo. Nessuna azione richiesta.")
+                print("Prezzo superiore all'obiettivo.")
         else:
-            print(f"La carta per {player_name} è sul mercato ma non ha un prezzo in EUR o ETH.")
-
+            print(f"Nessun prezzo valido trovato per {player_name}.")
+            
     except Exception as e:
-        print(f"Si è verificato un errore imprevisto: {e}")
+        print(f"Errore imprevisto durante il controllo di {player_slug}: {e}")
 
+
+def main():
+    """Funzione principale che orchestra il processo."""
+    if not all([PLAYER_TARGETS_JSON, SORARE_API_KEY, DISCORD_WEBHOOK_URL]):
+        print("ERRORE: Mancano una o più variabili d'ambiente o segreti.")
+        return
+
+    try:
+        targets = json.loads(PLAYER_TARGETS_JSON)
+        print(f"Trovati {len(targets)} giocatori da monitorare.")
+    except json.JSONDecodeError:
+        print("ERRORE: Formato JSON non valido in PLAYER_TARGETS_JSON.")
+        return
+    
+    # Recupera il tasso di cambio una sola volta all'inizio
+    eth_to_eur_rate = get_eth_to_eur_rate()
+    print(f"Tasso di cambio attuale: 1 ETH = {eth_to_eur_rate:.2f}€")
+
+    # Cicla su ogni giocatore nella lista
+    for target in targets:
+        check_single_player_price(target, eth_to_eur_rate)
+        # Aggiungiamo una piccola pausa per essere gentili con l'API di Sorare
+        time.sleep(1) 
+    
+    print("\n--- Controllo completato. ---")
 
 if __name__ == "__main__":
-    check_market_price()
+    main()
