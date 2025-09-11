@@ -12,7 +12,6 @@ STATE_FILE = "sent_notifications.json"
 NOTIFICATION_COOLDOWN_HOURS = 6
 
 # --- QUERY GRAPHQL PER IL PREZZO PIÙ BASSO ---
-# Chiede lo slug unico della carta, oltre alle altre informazioni
 LOWEST_PRICE_QUERY = """
     query GetLowestPrice($playerSlug: String!, $rarity: Rarity!, $inSeason: Boolean) {
       football {
