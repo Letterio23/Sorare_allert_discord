@@ -4,13 +4,20 @@
     "price": 3,
     "rarity": "rare",
     "season": "classic"
-  },  
+  },
   {
     "slug": "ederson-jose-dos-santos-lourenco-da-silva",
     "price": 3,
     "rarity": "rare",
     "season": "in_season"
   },
+  {
+    "slug": "morten-hjulmand",
+    "price": 3,69,
+    "rarity": "limited",
+    "season": "classic"
+  },
+  
   {
     "slug": "vitor-hugo-roque-ferreira",
     "price": 5.1,
@@ -19,7 +26,7 @@
   },
    {
     "slug": "antoine-griezmann",
-    "price": 1.5,
+    "price": 1.2,
     "rarity": "limited",
     "season": "classic"
   },
