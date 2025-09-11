@@ -4,22 +4,22 @@ import json
 import time
 from datetime import datetime, timedelta
 
-# --- CONFIGURAZIONE (invariata) ---
+# --- CONFIGURAZIONE ---
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 SORARE_API_KEY = os.environ.get("SORARE_API_KEY")
 API_URL = "https://api.sorare.com/graphql"
 STATE_FILE = "sent_notifications.json"
 NOTIFICATION_COOLDOWN_HOURS = 6
 
-# --- QUERY GRAPHQL AGGIORNATA ---
-# Aggiungiamo 'slug' per ottenere l'identificativo unico della carta
+# --- QUERY GRAPHQL PER IL PREZZO PIÙ BASSO ---
+# Chiede lo slug unico della carta, oltre alle altre informazioni
 LOWEST_PRICE_QUERY = """
     query GetLowestPrice($playerSlug: String!, $rarity: Rarity!, $inSeason: Boolean) {
       football {
         player(slug: $playerSlug) {
           displayName
           lowestPriceAnyCard(rarity: $rarity, inSeason: $inSeason) {
-            slug  # <-- MODIFICA CHIAVE: chiediamo lo slug unico della carta
+            slug
             liveSingleSaleOffer {
               receiverSide {
                 amounts { eurCents, wei }
@@ -31,34 +31,87 @@ LOWEST_PRICE_QUERY = """
     }
 """
 
-# ... (le funzioni get_eth_to_eur_rate, send_discord_notification, load/save_sent_notifications rimangono identiche) ...
-def get_eth_to_eur_rate():
+# --- QUERY PER IL TASSO DI CAMBIO UFFICIALE DI SORARE ---
+UTILITY_QUERY = """
+    query UtilityQuery {
+      utility {
+        ethToEurRate
+      }
+    }
+"""
+
+# --- FUNZIONI PER IL TASSO DI CAMBIO A CASCATA ---
+
+def get_sorare_eth_rate():
+    """Tenta di ottenere il tasso di cambio da Sorare (Fonte #1)."""
     try:
-        response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur")
+        headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
+        payload = {"query": UTILITY_QUERY}
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=5)
         response.raise_for_status()
+        data = response.json()
+        rate_str = data.get("data", {}).get("utility", {}).get("ethToEurRate")
+        if rate_str:
+            print("Tasso di cambio ottenuto da Sorare.")
+            return float(rate_str)
+    except Exception as e:
+        print(f"Attenzione: Impossibile ottenere il tasso da Sorare. Errore: {e}")
+    return None
+
+def get_coingecko_eth_rate():
+    """Tenta di ottenere il tasso di cambio da CoinGecko (Fonte #2)."""
+    try:
+        response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur", timeout=5)
+        response.raise_for_status()
+        print("Tasso di cambio ottenuto da CoinGecko.")
         return response.json()["ethereum"]["eur"]
-    except Exception: return 2800.0
+    except Exception as e:
+        print(f"Attenzione: Impossibile ottenere il tasso da CoinGecko. Errore: {e}")
+    return None
+
+def get_best_eth_rate():
+    """Restituisce il miglior tasso di cambio disponibile, con logica a cascata."""
+    rate = get_sorare_eth_rate()
+    if rate:
+        return rate
+    
+    rate = get_coingecko_eth_rate()
+    if rate:
+        return rate
+
+    print("ERRORE CRITICO: Impossibile ottenere il tasso di cambio da qualsiasi fonte.")
+    return None
+
+# --- FUNZIONI HELPER ---
 
 def send_discord_notification(message):
+    """Invia un messaggio al webhook di Discord."""
     if not DISCORD_WEBHOOK_URL: return
     payload = {"content": message}
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
         response.raise_for_status()
         print("Notifica Discord inviata con successo!")
-    except requests.exceptions.RequestException as e: print(f"ERRORE invio notifica Discord: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"ERRORE invio notifica Discord: {e}")
 
 def load_sent_notifications():
+    """Carica lo stato delle notifiche inviate dal file JSON."""
     try:
-        with open(STATE_FILE, "r") as f: return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError): return {}
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
 def save_sent_notifications(state_data):
-    with open(STATE_FILE, "w") as f: json.dump(state_data, f, indent=2)
+    """Salva lo stato aggiornato delle notifiche nel file JSON."""
+    with open(STATE_FILE, "w") as f:
+        json.dump(state_data, f, indent=2)
 
+# --- LOGICA PRINCIPALE DI CONTROLLO ---
 
 def check_single_player_price(target, eth_rate, sent_notifications):
-    """Controlla il prezzo usando lo slug unico della carta per l'anti-spam."""
+    """Controlla il prezzo di un singolo giocatore e invia notifiche se necessario."""
     player_slug = target['slug']
     target_price = float(target['price'])
     rarity = target['rarity']
@@ -73,7 +126,7 @@ def check_single_player_price(target, eth_rate, sent_notifications):
     payload = {"query": LOWEST_PRICE_QUERY, "variables": variables}
 
     try:
-        response = requests.post(API_URL, headers=headers, json=payload)
+        response = requests.post(API_URL, headers=headers, json=payload, timeout=10)
         response.raise_for_status()
         data = response.json()
 
@@ -86,13 +139,12 @@ def check_single_player_price(target, eth_rate, sent_notifications):
             print(f"Nessuna carta '{rarity}' ({season_text}) per {player_slug} trovata sul mercato.")
             return False
 
-        # --- LOGICA ANTI-SPAM POTENZIATA ---
         unique_card_slug = lowest_card_info.get("slug")
         if not unique_card_slug:
             print("Attenzione: lo slug unico della carta non è stato trovato nella risposta API.")
             return False
             
-        alert_key = unique_card_slug  # Usiamo lo slug della carta come chiave!
+        alert_key = unique_card_slug
 
         last_notified_str = sent_notifications.get(alert_key)
         if last_notified_str:
@@ -108,22 +160,27 @@ def check_single_player_price(target, eth_rate, sent_notifications):
         if amounts and amounts.get("eurCents"):
             current_price = amounts["eurCents"] / 100
         elif amounts and amounts.get("wei"):
-            eth_price = float(amounts["wei"]) / 1e18
-            current_price = eth_price * eth_rate
-
+            if eth_rate:
+                eth_price = float(amounts["wei"]) / 1e18
+                current_price = eth_price * eth_rate
+            else:
+                print(f"Saltando la conversione ETH per {unique_card_slug} a causa della mancanza di un tasso di cambio.")
+        
         if current_price > 0:
             print(f"Prezzo più basso ({unique_card_slug}): {current_price:.2f}€")
             if current_price <= target_price:
                 print(f"!!! CONDIZIONE SODDISFATTA PER {unique_card_slug}!!! Invio notifica...")
-                market_url = f"https://sorare.com/football/players/{player_slug}/cards?rarity={rarity}"
+                
+                market_url = f"https://sorare.com/cards/{unique_card_slug}"
+                
                 message = (
                     f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
                     f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
-                    f"**Carta Specifica:** `{unique_card_slug}`\n" # <-- Notifica migliorata
+                    f"**Carta Specifica:** `{unique_card_slug}`\n"
                     f"**Tipo Carta:** {season_text}\n"
                     f"📉 **Prezzo Trovato: {current_price:.2f}€**\n"
                     f"🎯 **Prezzo Obiettivo: {target_price:.2f}€**\n\n"
-                    f"➡️ Vai al mercato: {market_url}"
+                    f"➡️ **LINK DIRETTO ALLA CARTA:** {market_url}"
                 )
                 send_discord_notification(message)
                 sent_notifications[alert_key] = datetime.utcnow().isoformat()
@@ -138,7 +195,10 @@ def check_single_player_price(target, eth_rate, sent_notifications):
 
     return False
 
+# --- FUNZIONE DI AVVIO ---
+
 def main():
+    """Funzione principale che orchestra l'intero processo."""
     if not all([SORARE_API_KEY, DISCORD_WEBHOOK_URL]):
         print("ERRORE: Mancano i segreti SORARE_API_KEY o DISCORD_WEBHOOK_URL.")
         return
@@ -154,10 +214,13 @@ def main():
         print("ERRORE: Formato JSON non valido in players_list.json.")
         return
     
+    eth_to_eur_rate = get_best_eth_rate()
+    if eth_to_eur_rate:
+        print(f"Utilizzando il tasso di cambio: 1 ETH = {eth_to_eur_rate:.2f}€")
+
     sent_notifications = load_sent_notifications()
-    eth_to_eur_rate = get_eth_to_eur_rate()
-    
     state_was_modified = False
+    
     for target in targets:
         if check_single_player_price(target, eth_to_eur_rate, sent_notifications):
             state_was_modified = True
