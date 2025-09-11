@@ -11,6 +11,12 @@
     "rarity": "rare",
     "season": "in_season"
   },
+  {
+    "slug": "vitor-hugo-roque-ferreira",
+    "price": 5.1,
+    "rarity": "limited",
+    "season": "classic"
+  },
    {
     "slug": "antoine-griezmann",
     "price": 1.5,
