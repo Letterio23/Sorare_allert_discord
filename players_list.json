@@ -4,23 +4,23 @@
     "price": 3,
     "rarity": "rare",
     "season": "classic"
-  },
-  {
-    "slug": "ederson-jose-dos-santos-lourenco-da-silva",
-    "price": 1.4,
-    "rarity": "limited",
-    "season": "classic"
-  },
+  },  
   {
     "slug": "ederson-jose-dos-santos-lourenco-da-silva",
     "price": 3,
     "rarity": "rare",
     "season": "in_season"
   },
-  {
-    "slug": "christian-dannemann-eriksen",
-    "price": 3.0,
+   {
+    "slug": "antoine-griezmann",
+    "price": 1.1,
     "rarity": "limited",
+    "season": "classic"
+  },
+  {
+    "slug": "antoine-griezmann",
+    "price": 3.0,
+    "rarity": "rare",
     "season": "classic"
   }
   
