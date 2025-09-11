@@ -8,11 +8,15 @@ on:
   schedule:
     - cron: '*/5 * * * *'
 
+# Aggiunge i permessi di scrittura al workflow
+permissions:
+  contents: write
+
 jobs:
   check-prices:
     runs-on: ubuntu-latest
     steps:
-      # 1. Scarica il codice del tuo repository per poter eseguire lo script
+      # 1. Scarica il codice del tuo repository
       - name: Checkout del codice
         uses: actions/checkout@v4
 
@@ -26,23 +30,19 @@ jobs:
       - name: Installa dipendenze
         run: pip install requests
 
-      # 4. Esegue lo script che controlla i prezzi e invia le notifiche
+      # 4. Esegue lo script che controlla i prezzi
       - name: Esegui lo script di controllo mercato
         env:
-          # Segreti di GitHub
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           SORARE_API_KEY: ${{ secrets.SORARE_API_KEY }}
         run: python market_alert.py
 
-      # 5. Salva lo stato delle notifiche se è cambiato (versione robusta)
+      # 5. Salva lo stato delle notifiche se è cambiato
       - name: Commit and push notification state
         run: |
-          # Configura l'identità del bot per poter fare commit
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           
-          # Controlla se il file sent_notifications.json esiste prima di provare a salvarlo.
-          # Questo previene errori se lo script non invia notifiche e non crea/modifica il file.
           if [ -f sent_notifications.json ]; then
             git add sent_notifications.json
             git commit -m "Aggiorna lo stato delle notifiche inviate" || exit 0
