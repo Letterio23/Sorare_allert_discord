@@ -17,8 +17,14 @@ NOTIFICATION_COOLDOWN_HOURS = 6
 SPREADSHEET_ID = "1PTNR8xoBGzTCWCXCrr9rOnNgGcIrgFpCsaDwwvEYa3w"
 WORKSHEET_NAME = "ALLERT"
 
-# --- QUERY GRAPHQL AGGIORNATA ---
-# Sostituiamo 'xp' con 'grade' per ottenere il livello della carta
+# --- [NUOVA] CONFIGURAZIONE PER TOLLERANZA LIVELLO ALTO ---
+# Se una carta ha un livello uguale o superiore a questo...
+HIGH_LEVEL_THRESHOLD = 10
+# ... invia una notifica anche se il suo prezzo supera l'obiettivo di questo valore in Euro.
+HIGH_LEVEL_PRICE_TOLERANCE_EUR = 0.10
+# ---------------------------------------------------------
+
+# --- QUERY GRAPHQL (invariate) ---
 LOWEST_PRICE_QUERY = """
     query GetLowestPrice($playerSlug: String!, $rarity: Rarity!, $inSeason: Boolean) {
       football {
@@ -26,7 +32,7 @@ LOWEST_PRICE_QUERY = """
           displayName
           lowestPriceAnyCard(rarity: $rarity, inSeason: $inSeason) {
             slug
-            grade  # <-- MODIFICA CHIAVE: chiediamo il livello (grade) della carta
+            grade
             liveSingleSaleOffer {
               receiverSide {
                 amounts { eurCents, wei }
@@ -37,13 +43,7 @@ LOWEST_PRICE_QUERY = """
       }
     }
 """
-UTILITY_QUERY = """
-    query UtilityQuery {
-      utility {
-        ethToEurRate
-      }
-    }
-"""
+UTILITY_QUERY = """ query UtilityQuery { utility { ethToEurRate } } """
 
 # --- FUNZIONI HELPER (invariate) ---
 def get_sorare_eth_rate():
@@ -54,30 +54,23 @@ def get_sorare_eth_rate():
         response.raise_for_status()
         data = response.json()
         rate_str = data.get("data", {}).get("utility", {}).get("ethToEurRate")
-        if rate_str:
-            print("Tasso di cambio ottenuto da Sorare.")
-            return float(rate_str)
-    except Exception as e:
-        print(f"Attenzione: Impossibile ottenere il tasso da Sorare. Errore: {e}")
+        if rate_str: return float(rate_str)
+    except Exception: pass
     return None
 
 def get_coingecko_eth_rate():
     try:
         response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur", timeout=5)
         response.raise_for_status()
-        print("Tasso di cambio ottenuto da CoinGecko.")
         return response.json()["ethereum"]["eur"]
-    except Exception as e:
-        print(f"Attenzione: Impossibile ottenere il tasso da CoinGecko. Errore: {e}")
+    except Exception: pass
     return None
 
 def get_best_eth_rate():
     rate = get_sorare_eth_rate()
-    if rate:
-        return rate
+    if rate: print("Tasso di cambio ottenuto da Sorare."); return rate
     rate = get_coingecko_eth_rate()
-    if rate:
-        return rate
+    if rate: print("Tasso di cambio ottenuto da CoinGecko."); return rate
     print("ERRORE CRITICO: Impossibile ottenere il tasso di cambio da qualsiasi fonte.")
     return None
 
@@ -88,27 +81,22 @@ def send_discord_notification(message):
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload)
         response.raise_for_status()
         print("Notifica Discord inviata con successo!")
-    except requests.exceptions.RequestException as e:
-        print(f"ERRORE invio notifica Discord: {e}")
+    except requests.exceptions.RequestException as e: print(f"ERRORE invio notifica Discord: {e}")
 
 def load_sent_notifications():
     try:
-        with open(STATE_FILE, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        with open(STATE_FILE, "r") as f: return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError): return {}
 
 def save_sent_notifications(state_data):
-    with open(STATE_FILE, "w") as f:
-        json.dump(state_data, f, indent=2)
+    with open(STATE_FILE, "w") as f: json.dump(state_data, f, indent=2)
 
 # --- LOGICA PRINCIPALE DI CONTROLLO ---
 def check_single_player_price(target, eth_rate, sent_notifications):
     player_slug = target.get('slug')
     price_str = target.get('price')
 
-    if not player_slug or not price_str:
-        return False
+    if not player_slug or not price_str: return False
     
     try:
         target_price = float(str(price_str).replace(',', '.'))
@@ -123,11 +111,8 @@ def check_single_player_price(target, eth_rate, sent_notifications):
     print(f"\n--- Controllando {player_slug} ({rarity}, {season_text}) con obiettivo <= {target_price}€ ---")
     
     headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
-    
     variables = {"playerSlug": player_slug, "rarity": rarity}
-    if season_preference == 'in_season':
-        variables['inSeason'] = True
-        
+    if season_preference == 'in_season': variables['inSeason'] = True
     payload = {"query": LOWEST_PRICE_QUERY, "variables": variables}
 
     try:
@@ -160,45 +145,48 @@ def check_single_player_price(target, eth_rate, sent_notifications):
         
         player_name = data["data"]["football"]["player"].get("displayName", player_slug)
         amounts = lowest_card_info.get("liveSingleSaleOffer", {}).get("receiverSide", {}).get("amounts")
-        
-        # --- [MODIFICA CHIAVE] ESTRAZIONE DEL LIVELLO (GRADE) ---
         card_level = lowest_card_info.get("grade", 0)
-        # --------------------------------------------------------
 
         current_price = 0
-        if amounts and amounts.get("eurCents"):
-            current_price = amounts["eurCents"] / 100
-        elif amounts and amounts.get("wei"):
-            if eth_rate:
-                eth_price = float(amounts["wei"]) / 1e18
-                current_price = eth_price * eth_rate
-            else:
-                print(f"Saltando la conversione ETH per {unique_card_slug} a causa della mancanza di un tasso di cambio.")
+        if amounts and amounts.get("eurCents"): current_price = amounts["eurCents"] / 100
+        elif amounts and amounts.get("wei") and eth_rate:
+            current_price = (float(amounts["wei"]) / 1e18) * eth_rate
         
         if current_price > 0:
             print(f"Prezzo più basso ({unique_card_slug}): {current_price:.2f}€, Livello {card_level}")
+            
+            # --- [MODIFICA CHIAVE] LOGICA DI NOTIFICA CON TOLLERANZA ---
+            should_notify = False
+            notification_reason = ""
+
+            # Condizione 1: Prezzo standard
             if current_price <= target_price:
-                print(f"!!! CONDIZIONE SODDISFATTA PER {unique_card_slug}!!! Invio notifica...")
+                should_notify = True
+                notification_reason = "Prezzo Obiettivo Raggiunto"
+            # Condizione 2 (alternativa): Tolleranza per livello alto
+            elif card_level >= HIGH_LEVEL_THRESHOLD and current_price <= (target_price + HIGH_LEVEL_PRICE_TOLERANCE_EUR):
+                should_notify = True
+                notification_reason = f"Livello Alto (>= {HIGH_LEVEL_THRESHOLD})"
+            
+            if should_notify:
+                print(f"!!! CONDIZIONE SODDISFATTA ({notification_reason}) PER {unique_card_slug}!!! Invio notifica...")
                 market_url = f"https://sorare.com/cards/{unique_card_slug}"
-                
-                # --- [MODIFICA CHIAVE] AGGIUNTA DEL LIVELLO ALLA NOTIFICA ---
                 message = (
                     f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
                     f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
                     f"**Carta Specifica:** `{unique_card_slug}`\n"
                     f"**Livello Carta:** `{card_level}`\n"
+                    f"**Motivo Allerta:** {notification_reason}\n"
                     f"**Tipo Carta:** {season_text}\n"
                     f"📉 **Prezzo Trovato: {current_price:.2f}€**\n"
-                    f"🎯 **Prezzo Obiettivo: {target_price:.2f}€**\n\n"
+                    f"🎯 **Prezzo Obiettivo: {target_price:.2f}€** (+{HIGH_LEVEL_PRICE_TOLERANCE_EUR}€ di tolleranza per livello >= {HIGH_LEVEL_THRESHOLD})\n\n"
                     f"➡️ **LINK DIRETTO ALLA CARTA:** {market_url}"
                 )
-                # ---------------------------------------------------------
-
                 send_discord_notification(message)
                 sent_notifications[alert_key] = datetime.utcnow().isoformat()
                 return True
             else:
-                print("Prezzo superiore all'obiettivo.")
+                print("Prezzo superiore all'obiettivo (e alla tolleranza).")
         else:
             print(f"Nessun prezzo valido trovato per {unique_card_slug}.")
             
