@@ -17,12 +17,9 @@ NOTIFICATION_COOLDOWN_HOURS = 6
 SPREADSHEET_ID = "1PTNR8xoBGzTCWCXCrr9rOnNgGcIrgFpCsaDwwvEYa3w"
 WORKSHEET_NAME = "ALLERT"
 
-# --- [NUOVA] CONFIGURAZIONE PER TOLLERANZA LIVELLO ALTO ---
-# Se una carta ha un livello uguale o superiore a questo...
-HIGH_LEVEL_THRESHOLD = 10
-# ... invia una notifica anche se il suo prezzo supera l'obiettivo di questo valore in Euro.
-HIGH_LEVEL_PRICE_TOLERANCE_EUR = 0.10
-# ---------------------------------------------------------
+# Configurazione Tolleranza Livello Alto
+HIGH_LEVEL_THRESHOLD = 5
+HIGH_LEVEL_PRICE_TOLERANCE_EUR = 0.15
 
 # --- QUERY GRAPHQL (invariate) ---
 LOWEST_PRICE_QUERY = """
@@ -155,15 +152,12 @@ def check_single_player_price(target, eth_rate, sent_notifications):
         if current_price > 0:
             print(f"Prezzo più basso ({unique_card_slug}): {current_price:.2f}€, Livello {card_level}")
             
-            # --- [MODIFICA CHIAVE] LOGICA DI NOTIFICA CON TOLLERANZA ---
             should_notify = False
             notification_reason = ""
 
-            # Condizione 1: Prezzo standard
             if current_price <= target_price:
                 should_notify = True
                 notification_reason = "Prezzo Obiettivo Raggiunto"
-            # Condizione 2 (alternativa): Tolleranza per livello alto
             elif card_level >= HIGH_LEVEL_THRESHOLD and current_price <= (target_price + HIGH_LEVEL_PRICE_TOLERANCE_EUR):
                 should_notify = True
                 notification_reason = f"Livello Alto (>= {HIGH_LEVEL_THRESHOLD})"
@@ -207,7 +201,23 @@ def main():
         gc = gspread.service_account_from_dict(credentials)
         spreadsheet = gc.open_by_key(SPREADSHEET_ID)
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
-        targets = worksheet.get_all_records() 
+        
+        # --- [MODIFICA CHIAVE] LETTURA DEI VALORI GREZZI ---
+        # Leggiamo tutti i valori come stringhe per evitare conversioni automatiche
+        all_values = worksheet.get_all_values()
+        
+        # La prima riga è l'intestazione
+        headers = all_values[0]
+        # Le righe successive sono i dati
+        data_rows = all_values[1:]
+        
+        # Ricostruiamo la lista di dizionari, come faceva get_all_records()
+        targets = []
+        for row in data_rows:
+            # zip abbina ogni header con il suo valore nella riga
+            targets.append(dict(zip(headers, row)))
+        # ----------------------------------------------------
+            
         print(f"Trovati {len(targets)} giocatori da monitorare dal Foglio Google '{WORKSHEET_NAME}'.")
     except Exception as e:
         print(f"ERRORE CRITICO durante l'accesso a Google Sheets: {e}")
