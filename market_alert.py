@@ -35,7 +35,6 @@ LOWEST_PRICE_QUERY = """
       }
     }
 """
-
 UTILITY_QUERY = """
     query UtilityQuery {
       utility {
@@ -44,7 +43,7 @@ UTILITY_QUERY = """
     }
 """
 
-# --- FUNZIONI PER IL TASSO DI CAMBIO ---
+# --- FUNZIONI HELPER ---
 def get_sorare_eth_rate():
     try:
         headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
@@ -80,7 +79,6 @@ def get_best_eth_rate():
     print("ERRORE CRITICO: Impossibile ottenere il tasso di cambio da qualsiasi fonte.")
     return None
 
-# --- FUNZIONI HELPER ---
 def send_discord_notification(message):
     if not DISCORD_WEBHOOK_URL: return
     payload = {"content": message}
@@ -109,7 +107,7 @@ def check_single_player_price(target, eth_rate, sent_notifications):
 
     if not player_slug or not price_str:
         return False
-        
+    
     try:
         target_price = float(str(price_str).replace(',', '.'))
     except (ValueError, TypeError):
@@ -118,19 +116,15 @@ def check_single_player_price(target, eth_rate, sent_notifications):
 
     rarity = target.get('rarity')
     season_preference = target.get('season', 'classic')
-    season_text = "In Season" if season_preference == "in_season" else "Classic (Any)"
+    season_text = "In Season" if season_preference == "in_season" else "Classic (Any Season)"
     
     print(f"\n--- Controllando {player_slug} ({rarity}, {season_text}) con obiettivo <= {target_price}€ ---")
     
     headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
     
-    # --- [MODIFICA CHIAVE] COSTRUZIONE DELLE VARIABILI API ---
     variables = {"playerSlug": player_slug, "rarity": rarity}
-    # Aggiungiamo il filtro 'inSeason' solo se esplicitamente richiesto
     if season_preference == 'in_season':
         variables['inSeason'] = True
-    # Se è 'classic', non aggiungiamo nulla, così l'API cercherà qualsiasi stagione.
-    # ---------------------------------------------------------
         
     payload = {"query": LOWEST_PRICE_QUERY, "variables": variables}
 
@@ -150,7 +144,7 @@ def check_single_player_price(target, eth_rate, sent_notifications):
 
         unique_card_slug = lowest_card_info.get("slug")
         if not unique_card_slug:
-            print("Attenzione: lo slug unico della carta non è stato trovato nella risposta API.")
+            print("Attenzione: lo slug unico della carta non è stato trovato nella API.")
             return False
             
         alert_key = unique_card_slug
@@ -229,7 +223,7 @@ def main():
     
     for target in targets:
         if target.get('slug'):
-            if check_single_player_price(target, eth_to_eur_rate, sent_notifications):
+            if check_single_player_price(target, eth_rate, sent_notifications):
                 state_was_modified = True
             time.sleep(1) 
     
