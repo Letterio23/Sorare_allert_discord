@@ -17,7 +17,8 @@ NOTIFICATION_COOLDOWN_HOURS = 6
 SPREADSHEET_ID = "1PTNR8xoBGzTCWCXCrr9rOnNgGcIrgFpCsaDwwvEYa3w"
 WORKSHEET_NAME = "ALLERT"
 
-# --- QUERY GRAPHQL ---
+# --- QUERY GRAPHQL AGGIORNATA ---
+# Sostituiamo 'xp' con 'grade' per ottenere il livello della carta
 LOWEST_PRICE_QUERY = """
     query GetLowestPrice($playerSlug: String!, $rarity: Rarity!, $inSeason: Boolean) {
       football {
@@ -25,6 +26,7 @@ LOWEST_PRICE_QUERY = """
           displayName
           lowestPriceAnyCard(rarity: $rarity, inSeason: $inSeason) {
             slug
+            grade  # <-- MODIFICA CHIAVE: chiediamo il livello (grade) della carta
             liveSingleSaleOffer {
               receiverSide {
                 amounts { eurCents, wei }
@@ -43,7 +45,7 @@ UTILITY_QUERY = """
     }
 """
 
-# --- FUNZIONI HELPER ---
+# --- FUNZIONI HELPER (invariate) ---
 def get_sorare_eth_rate():
     try:
         headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
@@ -158,8 +160,12 @@ def check_single_player_price(target, eth_rate, sent_notifications):
         
         player_name = data["data"]["football"]["player"].get("displayName", player_slug)
         amounts = lowest_card_info.get("liveSingleSaleOffer", {}).get("receiverSide", {}).get("amounts")
-        current_price = 0
+        
+        # --- [MODIFICA CHIAVE] ESTRAZIONE DEL LIVELLO (GRADE) ---
+        card_level = lowest_card_info.get("grade", 0)
+        # --------------------------------------------------------
 
+        current_price = 0
         if amounts and amounts.get("eurCents"):
             current_price = amounts["eurCents"] / 100
         elif amounts and amounts.get("wei"):
@@ -170,19 +176,24 @@ def check_single_player_price(target, eth_rate, sent_notifications):
                 print(f"Saltando la conversione ETH per {unique_card_slug} a causa della mancanza di un tasso di cambio.")
         
         if current_price > 0:
-            print(f"Prezzo più basso ({unique_card_slug}): {current_price:.2f}€")
+            print(f"Prezzo più basso ({unique_card_slug}): {current_price:.2f}€, Livello {card_level}")
             if current_price <= target_price:
                 print(f"!!! CONDIZIONE SODDISFATTA PER {unique_card_slug}!!! Invio notifica...")
                 market_url = f"https://sorare.com/cards/{unique_card_slug}"
+                
+                # --- [MODIFICA CHIAVE] AGGIUNTA DEL LIVELLO ALLA NOTIFICA ---
                 message = (
                     f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
                     f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
                     f"**Carta Specifica:** `{unique_card_slug}`\n"
+                    f"**Livello Carta:** `{card_level}`\n"
                     f"**Tipo Carta:** {season_text}\n"
                     f"📉 **Prezzo Trovato: {current_price:.2f}€**\n"
                     f"🎯 **Prezzo Obiettivo: {target_price:.2f}€**\n\n"
                     f"➡️ **LINK DIRETTO ALLA CARTA:** {market_url}"
                 )
+                # ---------------------------------------------------------
+
                 send_discord_notification(message)
                 sent_notifications[alert_key] = datetime.utcnow().isoformat()
                 return True
@@ -223,7 +234,7 @@ def main():
     
     for target in targets:
         if target.get('slug'):
-            if check_single_player_price(target, eth_rate, sent_notifications):
+            if check_single_player_price(target, eth_to_eur_rate, sent_notifications):
                 state_was_modified = True
             time.sleep(1) 
     
