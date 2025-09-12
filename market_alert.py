@@ -17,7 +17,7 @@ NOTIFICATION_COOLDOWN_HOURS = 6
 SPREADSHEET_ID = "1PTNR8xoBGzTCWCXCrr9rOnNgGcIrgFpCsaDwwvEYa3w"
 WORKSHEET_NAME = "ALLERT"
 
-# --- QUERY GRAPHQL PER IL PREZZO PIÙ BASSO ---
+# --- QUERY GRAPHQL ---
 LOWEST_PRICE_QUERY = """
     query GetLowestPrice($playerSlug: String!, $rarity: Rarity!, $inSeason: Boolean) {
       football {
@@ -36,7 +36,6 @@ LOWEST_PRICE_QUERY = """
     }
 """
 
-# --- QUERY PER IL TASSO DI CAMBIO UFFICIALE DI SORARE ---
 UTILITY_QUERY = """
     query UtilityQuery {
       utility {
@@ -45,10 +44,8 @@ UTILITY_QUERY = """
     }
 """
 
-# --- FUNZIONI PER IL TASSO DI CAMBIO A CASCATA ---
-
+# --- FUNZIONI PER IL TASSO DI CAMBIO ---
 def get_sorare_eth_rate():
-    """Tenta di ottenere il tasso di cambio da Sorare (Fonte #1)."""
     try:
         headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
         payload = {"query": UTILITY_QUERY}
@@ -64,7 +61,6 @@ def get_sorare_eth_rate():
     return None
 
 def get_coingecko_eth_rate():
-    """Tenta di ottenere il tasso di cambio da CoinGecko (Fonte #2)."""
     try:
         response = requests.get("https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=eur", timeout=5)
         response.raise_for_status()
@@ -75,22 +71,17 @@ def get_coingecko_eth_rate():
     return None
 
 def get_best_eth_rate():
-    """Restituisce il miglior tasso di cambio disponibile, con logica a cascata."""
     rate = get_sorare_eth_rate()
     if rate:
         return rate
-    
     rate = get_coingecko_eth_rate()
     if rate:
         return rate
-
     print("ERRORE CRITICO: Impossibile ottenere il tasso di cambio da qualsiasi fonte.")
     return None
 
 # --- FUNZIONI HELPER ---
-
 def send_discord_notification(message):
-    """Invia un messaggio al webhook di Discord."""
     if not DISCORD_WEBHOOK_URL: return
     payload = {"content": message}
     try:
@@ -101,7 +92,6 @@ def send_discord_notification(message):
         print(f"ERRORE invio notifica Discord: {e}")
 
 def load_sent_notifications():
-    """Carica lo stato delle notifiche inviate dal file JSON."""
     try:
         with open(STATE_FILE, "r") as f:
             return json.load(f)
@@ -109,23 +99,18 @@ def load_sent_notifications():
         return {}
 
 def save_sent_notifications(state_data):
-    """Salva lo stato aggiornato delle notifiche nel file JSON."""
     with open(STATE_FILE, "w") as f:
         json.dump(state_data, f, indent=2)
 
 # --- LOGICA PRINCIPALE DI CONTROLLO ---
-
 def check_single_player_price(target, eth_rate, sent_notifications):
-    """Controlla il prezzo di un singolo giocatore e invia notifiche se necessario."""
     player_slug = target.get('slug')
     price_str = target.get('price')
 
-    # Ignora le righe incomplete
     if not player_slug or not price_str:
         return False
         
     try:
-        # Sostituisce la virgola con il punto per i decimali e converte in numero
         target_price = float(str(price_str).replace(',', '.'))
     except (ValueError, TypeError):
         print(f"Attenzione: prezzo non valido per {player_slug}: '{price_str}'. Riga saltata.")
@@ -133,13 +118,20 @@ def check_single_player_price(target, eth_rate, sent_notifications):
 
     rarity = target.get('rarity')
     season_preference = target.get('season', 'classic')
-    is_in_season = (season_preference == "in_season")
-    season_text = "In Season" if is_in_season else "Classic"
+    season_text = "In Season" if season_preference == "in_season" else "Classic (Any)"
     
     print(f"\n--- Controllando {player_slug} ({rarity}, {season_text}) con obiettivo <= {target_price}€ ---")
     
     headers = {"APIKEY": SORARE_API_KEY, "Content-Type": "application/json"}
-    variables = {"playerSlug": player_slug, "rarity": rarity, "inSeason": is_in_season}
+    
+    # --- [MODIFICA CHIAVE] COSTRUZIONE DELLE VARIABILI API ---
+    variables = {"playerSlug": player_slug, "rarity": rarity}
+    # Aggiungiamo il filtro 'inSeason' solo se esplicitamente richiesto
+    if season_preference == 'in_season':
+        variables['inSeason'] = True
+    # Se è 'classic', non aggiungiamo nulla, così l'API cercherà qualsiasi stagione.
+    # ---------------------------------------------------------
+        
     payload = {"query": LOWEST_PRICE_QUERY, "variables": variables}
 
     try:
@@ -187,9 +179,7 @@ def check_single_player_price(target, eth_rate, sent_notifications):
             print(f"Prezzo più basso ({unique_card_slug}): {current_price:.2f}€")
             if current_price <= target_price:
                 print(f"!!! CONDIZIONE SODDISFATTA PER {unique_card_slug}!!! Invio notifica...")
-                
                 market_url = f"https://sorare.com/cards/{unique_card_slug}"
-                
                 message = (
                     f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
                     f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
@@ -213,23 +203,17 @@ def check_single_player_price(target, eth_rate, sent_notifications):
     return False
 
 # --- FUNZIONE DI AVVIO ---
-
 def main():
-    """Funzione principale che orchestra l'intero processo."""
     if not all([SORARE_API_KEY, DISCORD_WEBHOOK_URL, GSPREAD_CREDENTIALS_JSON]):
-        print("ERRORE: Mancano uno o più segreti (API_KEY, WEBHOOK, GSPREAD_CREDENTIALS).")
+        print("ERRORE: Mancano uno o più segreti.")
         return
     
-    # --- LOGICA DI LETTURA DAL FOGLIO GOOGLE ---
     try:
         print("Autenticazione a Google Sheets...")
         credentials = json.loads(GSPREAD_CREDENTIALS_JSON)
         gc = gspread.service_account_from_dict(credentials)
-        
-        print(f"Apertura del foglio di lavoro con ID: {SPREADSHEET_ID}")
         spreadsheet = gc.open_by_key(SPREADSHEET_ID)
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
-        
         targets = worksheet.get_all_records() 
         print(f"Trovati {len(targets)} giocatori da monitorare dal Foglio Google '{WORKSHEET_NAME}'.")
     except Exception as e:
