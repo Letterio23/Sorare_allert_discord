@@ -166,7 +166,7 @@ def check_single_player_price(target, eth_rate, sent_notifications):
                 print(f"!!! CONDIZIONE SODDISFATTA ({notification_reason}) PER {unique_card_slug}!!! Invio notifica...")
                 market_url = f"https://sorare.com/cards/{unique_card_slug}"
                 message = (
-                    f"🔥 **Allerta Prezzo Sorare!** 🔥\n\n"
+                    f"🛒 **Allerta Prezzo Target!!** 🛒\n\n"
                     f"Trovata carta per **{player_name}** ({rarity.capitalize()}) sotto il tuo prezzo obiettivo!\n\n"
                     f"**Carta Specifica:** `{unique_card_slug}`\n"
                     f"**Livello Carta:** `{card_level}`\n"
